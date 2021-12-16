@@ -1,5 +1,4 @@
 import { WebSocketServer } from 'ws';
-import opus from '@discordjs/opus';
 import Speaker from 'speaker';
 
 const WS_PORT = 7619;
@@ -15,18 +14,29 @@ wss.on('connection', (ws, req) => {
     }
     wsId = req.headers["sec-websocket-key"];
     let speaker;
-    let encoder;
+    let sampleRate;
+    let channels;
+    let bitDepth;
     ws.on('message', (message) => {
-        // first message is the sample rate information
-        if (!speaker) /* && !encoder */ {
-            let sampleRate = parseInt(message.toString());
-            console.log("Sample rate: ", sampleRate);
-            speaker = new Speaker({ channels: 1, bitDepth: 16, sampleRate: sampleRate });
-            encoder = new opus.OpusEncoder(sampleRate, 1);
-            return;
+        if (!sampleRate) {
+            sampleRate = parseInt(message.toString());
         }
-
-        speaker.write(encoder.decode(message));
+        else if (!channels) {
+            channels = parseInt(message.toString());
+        }
+        else if (!bitDepth) {
+            bitDepth = parseInt(message.toString().match(/\d+/)[0]);
+        } else {
+            if (!speaker) {
+                console.log(`Initializing a new speaker with:
+sample rate: ${sampleRate}
+bit depth: ${bitDepth}
+channels: ${channels}
+                `)
+                speaker = new Speaker({ channels, bitDepth, sampleRate });
+            }
+            speaker.write(message);
+        }
     });
     ws.on('close', _ => {
         if (speaker) speaker.close();

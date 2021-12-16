@@ -9,7 +9,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@discordjs/opus": "^0.7.0",
     "speaker": "^0.5.3",
     "ws": "^8.3.0"
   }
