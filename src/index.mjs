@@ -31,8 +31,7 @@ wss.on('connection', (ws, req) => {
                 console.log(`Initializing a new speaker with:
 sample rate: ${sampleRate}
 bit depth: ${bitDepth}
-channels: ${channels}
-                `)
+channels: ${channels}`)
                 speaker = new Speaker({ channels, bitDepth, sampleRate });
             }
             speaker.write(message);
@@ -40,7 +39,7 @@ channels: ${channels}
     });
     ws.on('close', _ => {
         if (speaker) speaker.close();
-        console.log(wsId, "has disconnected");
+        console.log(wsId, "has disconnected\n");
         wsId = null;
     });
 });
