@@ -10,7 +10,7 @@ wss.on('connection', (ws, req) => {
     console.log("Got a connection...", req.headers["sec-websocket-key"]);
     if (wsId) {
         console.log(`Currently in use by ${wsId}. Aborting...`);
-	ws.close();
+        ws.close();
         return;
     }
     wsId = req.headers["sec-websocket-key"];
@@ -29,7 +29,8 @@ wss.on('connection', (ws, req) => {
         speaker.write(encoder.decode(message));
     });
     ws.on('close', _ => {
+        if (speaker) speaker.close();
         console.log(wsId, "has disconnected");
-	wsId = null;
+        wsId = null;
     });
 });
