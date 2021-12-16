@@ -3,16 +3,17 @@ import opus from '@discordjs/opus';
 import Speaker from 'speaker';
 
 const WS_PORT = 7619;
-let inUse = false;
+let wsId;
 let wss = new WebSocketServer({ port: WS_PORT, host: "0.0.0.0" });
 
 wss.on('connection', (ws, req) => {
     console.log("Got a connection...", req.headers["sec-websocket-key"]);
-    if (inUse) {
-        console.log("Another connection already exists! Aborting...");
+    if (wsId) {
+        console.log(`Currently in use by ${wsId}. Aborting...`);
+	ws.close();
         return;
     }
-    inUse = true;
+    wsId = req.headers["sec-websocket-key"];
     let speaker;
     let encoder;
     ws.on('message', (message) => {
@@ -28,7 +29,7 @@ wss.on('connection', (ws, req) => {
         speaker.write(encoder.decode(message));
     });
     ws.on('close', _ => {
-        console.log(req.headers["sec-websocket-key"], "has disconnected");
-        inUse = false;
+        console.log(wsId, "has disconnected");
+	wsId = null;
     });
 });
