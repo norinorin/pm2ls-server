@@ -4,6 +4,7 @@ import Speaker from 'speaker';
 const WS_PORT = 7619;
 let wsId;
 let wss = new WebSocketServer({ port: WS_PORT, host: "0.0.0.0" });
+let isWritable = true;
 
 wss.on('connection', (ws, req) => {
     console.log("Got a connection...", req.headers["sec-websocket-key"]);
@@ -33,8 +34,9 @@ sample rate: ${sampleRate}
 bit depth: ${bitDepth}
 channels: ${channels}`)
                 speaker = new Speaker({ channels, bitDepth, sampleRate });
+                speaker.on("drain", _ => isWritable = true);
             }
-            speaker.write(message);
+            if (isWritable) isWritable = speaker.write(message);
         }
     });
     ws.on('close', _ => {
