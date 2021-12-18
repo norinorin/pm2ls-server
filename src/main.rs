@@ -5,7 +5,7 @@ mod decoder;
 
 use cpal::platform::Device;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use decoder::OpusDecoder;
+// use decoder::OpusDecoder;
 use ringbuf::RingBuffer;
 use std::fmt;
 use std::net::TcpStream;
@@ -73,7 +73,7 @@ fn main() {
                 sample_rate: cpal::SampleRate(sample_rate),
                 buffer_size: cpal::BufferSize::Fixed(buffer_size),
             };
-            let decoder = OpusDecoder::new(sample_rate as i32, channels as i32).unwrap();
+            // let decoder = OpusDecoder::new(sample_rate as i32, channels as i32).unwrap();
             let ring = RingBuffer::<f32>::new(ring_buffer_size * 2);
             let (mut producer, mut consumer) = ring.split();
 
@@ -94,6 +94,10 @@ fn main() {
             output_stream.play().unwrap();
 
             for message in client.incoming_messages() {
+                if message.is_err() {
+                    break;
+                }
+
                 let message = message.unwrap();
 
                 match message {
@@ -103,16 +107,23 @@ fn main() {
                         break;
                     }
                     OwnedMessage::Binary(bin) => {
-                        let decoded = decoder.decode_float(&bin, false).unwrap();
-                        for s in decoded {
-                            producer.push(s).unwrap_or(());
+                        for sample in bin {
+                            // let new_sample: i16 = if sample <= 127 {
+                            //     sample as i16
+                            // } else {
+                            //     sample as i16 - 256
+                            // };
+
+                            let normalized = sample as f32 / 255.0;
+                            println!("{}", normalized);
+                            producer.push(normalized).unwrap_or(());
                         }
                     }
                     _ => (),
                 }
             }
             data_ref.in_use = false;
-            decoder.destroy();
+            // decoder.destroy();
             drop(output_stream);
             println!("Connection has been terminated.");
         });
