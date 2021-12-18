@@ -105,7 +105,6 @@ fn main() {
                     OwnedMessage::Binary(bin) => {
                         let decoded = decoder.decode_float(&bin, false).unwrap();
                         for s in decoded {
-                            println!("{}", s);
                             producer.push(s).unwrap_or(());
                         }
                     }
