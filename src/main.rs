@@ -61,12 +61,16 @@ fn main() {
 
             let sample_rate: u32 = get_int(&mut client);
             let channels: u16 = get_int(&mut client);
-            let buffer_size: u32 = sample_rate * 2 / 100;
+            let buffer_size: u32 = sample_rate / 50;
             let ring_buffer_size = buffer_size as usize * channels as usize;
 
             println!("sample rate: {}", sample_rate);
             println!("channels: {}", channels);
-            println!("buffer size (20ms latency): {}", buffer_size);
+            println!(
+                "buffer size ({} msec latency): {}",
+                buffer_size / (sample_rate / 1000),
+                buffer_size
+            );
 
             let config = cpal::StreamConfig {
                 channels,
@@ -74,16 +78,16 @@ fn main() {
                 buffer_size: cpal::BufferSize::Fixed(buffer_size),
             };
             // let decoder = OpusDecoder::new(sample_rate as i32, channels as i32).unwrap();
-            let ring = RingBuffer::<f32>::new(ring_buffer_size * 2);
+            let ring = RingBuffer::<i16>::new(ring_buffer_size * 2);
             let (mut producer, mut consumer) = ring.split();
 
             for _ in 0..ring_buffer_size {
-                producer.push(0.0).unwrap();
+                producer.push(0).unwrap();
             }
 
-            let output_data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+            let output_data_fn = move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
                 let written = consumer.pop_slice(data);
-                data[written..].iter_mut().for_each(|s| *s = 0.0);
+                data[written..].iter_mut().for_each(|s| *s = 0);
             };
 
             let output_stream = data_ref
@@ -108,16 +112,12 @@ fn main() {
                     }
                     OwnedMessage::Binary(bin) => {
                         for sample in bin {
-                            // let new_sample: i16 = if sample <= 127 {
-                            //     sample as i16
-                            // } else {
-                            //     sample as i16 - 256
-                            // };
-
-                            let normalized = sample as f32 / 255.0;
-                            println!("{}", normalized);
-                            producer.push(normalized).unwrap_or(());
+                            let new_sample = ((sample as i32) << 8) + sample as i32;
+                            producer
+                                .push(((new_sample + 0x8000) % 0x10000 - 0x8000) as i16)
+                                .unwrap_or(());
                         }
+                        // break; // debug!
                     }
                     _ => (),
                 }
