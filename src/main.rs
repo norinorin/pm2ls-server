@@ -61,7 +61,7 @@ fn main() {
 
             let sample_rate: u32 = get_int(&mut client);
             let channels: u16 = get_int(&mut client);
-            let buffer_size: u32 = sample_rate / 50;
+            let buffer_size: u32 = get_int(&mut client);
             let ring_buffer_size = buffer_size as usize * channels as usize;
 
             println!("sample rate: {}", sample_rate);
