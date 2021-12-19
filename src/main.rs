@@ -5,7 +5,7 @@ mod decoder;
 
 use cpal::platform::Device;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-// use decoder::OpusDecoder;
+use decoder::OpusDecoder;
 use ringbuf::RingBuffer;
 use std::fmt;
 use std::net::TcpStream;
@@ -77,7 +77,7 @@ fn main() {
                 sample_rate: cpal::SampleRate(sample_rate),
                 buffer_size: cpal::BufferSize::Fixed(buffer_size),
             };
-            // let decoder = OpusDecoder::new(sample_rate as i32, channels as i32).unwrap();
+            let decoder = OpusDecoder::new(sample_rate as i32, channels as i32).unwrap();
             let ring = RingBuffer::<i16>::new(ring_buffer_size * 2);
             let (mut producer, mut consumer) = ring.split();
 
@@ -111,11 +111,9 @@ fn main() {
                         break;
                     }
                     OwnedMessage::Binary(bin) => {
-                        for sample in bin {
-                            let new_sample = ((sample as i32) << 8) + sample as i32;
-                            producer
-                                .push(((new_sample + 0x8000) % 0x10000 - 0x8000) as i16)
-                                .unwrap_or(());
+                        let encoded = decoder.decode(&bin, false).unwrap();
+                        for sample in encoded {
+                            producer.push(sample).unwrap_or(());
                         }
                         // break; // debug!
                     }
@@ -123,9 +121,9 @@ fn main() {
                 }
             }
             data_ref.in_use = false;
-            // decoder.destroy();
+            decoder.destroy();
             drop(output_stream);
-            println!("Connection has been terminated.");
+            println!("Connection has been terminated.\n");
         });
     }
 }
