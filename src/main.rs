@@ -17,8 +17,7 @@ use websocket::sync::Server;
 use websocket::ws::dataframe::DataFrame;
 use websocket::OwnedMessage;
 
-struct Data {
-    in_use: bool,
+struct DeviceWrapper {
     output_device: Device,
 }
 
@@ -38,22 +37,23 @@ fn err_fn(err: cpal::StreamError) {
 
 fn main() {
     let server = Server::bind("0.0.0.0:7619").unwrap();
-    let data = Arc::new(Mutex::new(Data {
-        in_use: false,
+    let data = Arc::new(Mutex::new(DeviceWrapper {
         output_device: cpal::default_host().default_output_device().unwrap(),
     }));
 
     for request in server.filter_map(Result::ok) {
         let data = Arc::clone(&data);
         thread::spawn(move || {
-            let mut data_ref = data.lock().unwrap();
-            if data_ref.in_use {
-                println!("Connection is currently in use. Rejecting incoming request.",);
-                request.reject().unwrap();
-                return;
-            }
-
             println!("Got a connection! Trying to accept...");
+
+            let data_ref = match data.try_lock() {
+                Ok(data_ref) => data_ref,
+                _ => {
+                    println!("Currently in use. Rejecting incoming request.",);
+                    request.reject().unwrap();
+                    return;
+                }
+            };
 
             let mut client = request.accept().unwrap();
 
@@ -120,9 +120,6 @@ fn main() {
                     _ => (),
                 }
             }
-            data_ref.in_use = false;
-            decoder.destroy();
-            drop(output_stream);
             println!("Connection has been terminated.\n");
         });
     }

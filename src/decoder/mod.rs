@@ -7,12 +7,11 @@ mod errors;
 
 use errors::OpusError;
 
-const IDEAL_FRAME_DURATION: i32 = 20;
+const IDEAL_FRAME_DURATION: u8 = 20;
 
 pub struct OpusDecoder {
     state: *mut OpusDecoderState,
     sample_rate: i32,
-    channels: i32,
 }
 
 impl OpusDecoder {
@@ -25,11 +24,7 @@ impl OpusDecoder {
             return Err(OpusError { error });
         }
 
-        Ok(OpusDecoder {
-            state,
-            sample_rate,
-            channels,
-        })
+        Ok(Self { state, sample_rate })
     }
 
     pub fn destroy(&self) {
@@ -37,7 +32,7 @@ impl OpusDecoder {
     }
 
     pub fn decode_float(&self, encoded: &[u8], fec: bool) -> Result<Vec<f32>, OpusError> {
-        let frame_size = IDEAL_FRAME_DURATION * self.sample_rate / 1000;
+        let frame_size = IDEAL_FRAME_DURATION as i32 * self.sample_rate / 1000;
         let mut decoded = vec![0.0; frame_size as usize];
         let written = unsafe {
             opus_decode_float(
@@ -58,7 +53,7 @@ impl OpusDecoder {
     }
 
     pub fn decode(&self, encoded: &[u8], fec: bool) -> Result<Vec<i16>, OpusError> {
-        let frame_size = IDEAL_FRAME_DURATION * self.sample_rate / 1000;
+        let frame_size = IDEAL_FRAME_DURATION as i32 * self.sample_rate / 1000;
         let mut decoded = vec![0; frame_size as usize];
         let written = unsafe {
             opus_decode(
@@ -76,5 +71,11 @@ impl OpusDecoder {
         }
 
         Ok(decoded)
+    }
+}
+
+impl Drop for OpusDecoder {
+    fn drop(&mut self) {
+        self.destroy();
     }
 }
