@@ -17,8 +17,7 @@ use websocket::sync::Server;
 use websocket::ws::dataframe::DataFrame;
 use websocket::OwnedMessage;
 
-struct Data {
-    in_use: bool,
+struct DeviceWrapper {
     output_device: Device,
 }
 
@@ -32,28 +31,25 @@ where
         .unwrap()
 }
 
-fn err_fn(err: cpal::StreamError) {
-    eprintln!("an error occurred on stream: {}", err);
-}
-
 fn main() {
     let server = Server::bind("0.0.0.0:7619").unwrap();
-    let data = Arc::new(Mutex::new(Data {
-        in_use: false,
+    let data = Arc::new(Mutex::new(DeviceWrapper {
         output_device: cpal::default_host().default_output_device().unwrap(),
     }));
 
     for request in server.filter_map(Result::ok) {
         let data = Arc::clone(&data);
         thread::spawn(move || {
-            let mut data_ref = data.lock().unwrap();
-            if data_ref.in_use {
-                println!("Connection is currently in use. Rejecting incoming request.",);
-                request.reject().unwrap();
-                return;
-            }
-
             println!("Got a connection! Trying to accept...");
+
+            let data_ref = match data.try_lock() {
+                Ok(data_ref) => data_ref,
+                _ => {
+                    println!("Currently in use. Rejecting incoming request.",);
+                    request.reject().unwrap();
+                    return;
+                }
+            };
 
             let mut client = request.accept().unwrap();
 
@@ -77,22 +73,21 @@ fn main() {
                 sample_rate: cpal::SampleRate(sample_rate),
                 buffer_size: cpal::BufferSize::Fixed(buffer_size),
             };
+            // TODO: reuse decoder
             let decoder = OpusDecoder::new(sample_rate as i32, channels as i32).unwrap();
-            let ring = RingBuffer::<i16>::new(ring_buffer_size * 2);
+            let ring = RingBuffer::<f32>::new(ring_buffer_size * 2);
             let (mut producer, mut consumer) = ring.split();
-
-            for _ in 0..ring_buffer_size {
-                producer.push(0).unwrap();
-            }
-
-            let output_data_fn = move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                let written = consumer.pop_slice(data);
-                data[written..].iter_mut().for_each(|s| *s = 0);
-            };
 
             let output_stream = data_ref
                 .output_device
-                .build_output_stream(&config, output_data_fn, err_fn)
+                .build_output_stream(
+                    &config,
+                    move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                        let read = consumer.pop_slice(data);
+                        data[read..].iter_mut().for_each(|s| *s = 0.0);
+                    },
+                    move |error: cpal::StreamError| eprintln!("Stream threw an error: {}", error),
+                )
                 .unwrap();
 
             output_stream.play().unwrap();
@@ -111,18 +106,13 @@ fn main() {
                         break;
                     }
                     OwnedMessage::Binary(bin) => {
-                        let decoded = decoder.decode(&bin, false).unwrap();
-                        for sample in decoded {
-                            producer.push(sample).unwrap_or(());
-                        }
+                        let decoded = decoder.decode_float(&bin, false).unwrap();
+                        producer.push_slice(&decoded);
                         // break; // debug!
                     }
                     _ => (),
                 }
             }
-            data_ref.in_use = false;
-            decoder.destroy();
-            drop(output_stream);
             println!("Connection has been terminated.\n");
         });
     }
