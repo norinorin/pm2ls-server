@@ -7,6 +7,8 @@ mod errors;
 
 use errors::OpusError;
 
+const IDEAL_FRAME_DURATION: i32 = 20;
+
 pub struct OpusDecoder {
     state: *mut OpusDecoderState,
     sample_rate: i32,
@@ -35,16 +37,15 @@ impl OpusDecoder {
     }
 
     pub fn decode_float(&self, encoded: &[u8], fec: bool) -> Result<Vec<f32>, OpusError> {
-        let frame_size = 20 * self.sample_rate / 1000 * self.channels;
-        let mut decoded =
-            vec![0.0; self.channels as usize * frame_size as usize * std::mem::size_of::<f32>()];
+        let frame_size = IDEAL_FRAME_DURATION * self.sample_rate / 1000;
+        let mut decoded = vec![0.0; frame_size as usize];
         let written = unsafe {
             opus_decode_float(
                 self.state,
                 encoded.as_ptr(),
                 encoded.len().try_into().expect("data is out of range"),
                 decoded.as_mut_ptr(),
-                20 * self.sample_rate / 1000 * self.channels,
+                frame_size,
                 fec.into(),
             )
         };
@@ -57,16 +58,15 @@ impl OpusDecoder {
     }
 
     pub fn decode(&self, encoded: &[u8], fec: bool) -> Result<Vec<i16>, OpusError> {
-        let frame_size = 20 * self.sample_rate / 1000 * self.channels;
-        let mut decoded =
-            vec![0; self.channels as usize * frame_size as usize * std::mem::size_of::<i16>()];
+        let frame_size = IDEAL_FRAME_DURATION * self.sample_rate / 1000;
+        let mut decoded = vec![0; frame_size as usize];
         let written = unsafe {
             opus_decode(
                 self.state,
                 encoded.as_ptr(),
                 encoded.len().try_into().expect("data is out of range"),
                 decoded.as_mut_ptr(),
-                20 * self.sample_rate / 1000 * self.channels,
+                frame_size,
                 fec.into(),
             )
         };

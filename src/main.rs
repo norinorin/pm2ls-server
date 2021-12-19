@@ -111,8 +111,8 @@ fn main() {
                         break;
                     }
                     OwnedMessage::Binary(bin) => {
-                        let encoded = decoder.decode(&bin, false).unwrap();
-                        for sample in encoded {
+                        let decoded = decoder.decode(&bin, false).unwrap();
+                        for sample in decoded {
                             producer.push(sample).unwrap_or(());
                         }
                         // break; // debug!
