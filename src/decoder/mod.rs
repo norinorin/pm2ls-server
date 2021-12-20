@@ -5,6 +5,7 @@ use audiopus_sys::{opus_decoder_destroy, OpusDecoder as OpusDecoderState};
 
 mod errors;
 
+use errors::get_opus_error;
 use errors::OpusError;
 
 const IDEAL_FRAME_DURATION: u8 = 20;
@@ -21,7 +22,7 @@ impl OpusDecoder {
             unsafe { opus_decoder_create(sample_rate, channels, &mut error) };
 
         if error != 0 {
-            return Err(OpusError { error });
+            return Err(get_opus_error(error));
         }
 
         Ok(Self { state, sample_rate })
@@ -46,7 +47,7 @@ impl OpusDecoder {
         };
 
         if written < 0 {
-            return Err(OpusError { error: written });
+            return Err(get_opus_error(written));
         }
 
         Ok(decoded)
@@ -67,7 +68,7 @@ impl OpusDecoder {
         };
 
         if written < 0 {
-            return Err(OpusError { error: written });
+            return Err(get_opus_error(written));
         }
 
         Ok(decoded)
