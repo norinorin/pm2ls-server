@@ -6,7 +6,7 @@ mod decoder;
 use cpal::platform::Device;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use decoder::OpusDecoder;
-use ringbuf::RingBuffer;
+use rb::{RbConsumer, RbProducer, SpscRb, RB};
 use std::fmt;
 use std::net::TcpStream;
 use std::str::FromStr;
@@ -74,15 +74,15 @@ fn main() {
             };
             // TODO: reuse decoder
             let decoder = OpusDecoder::new(sample_rate as i32, channels as i32).unwrap();
-            let ring = RingBuffer::<f32>::new(ring_buffer_size * 2);
-            let (mut producer, mut consumer) = ring.split();
+            let ring = SpscRb::new(ring_buffer_size * 2);
+            let (producer, consumer) = (ring.producer(), ring.consumer());
 
             let output_stream = data_ref
                 .output_device
                 .build_output_stream(
                     &config,
                     move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                        let read = consumer.pop_slice(data);
+                        let read = consumer.read(data).unwrap_or(0);
                         data[read..].iter_mut().for_each(|s| *s = 0.0);
                     },
                     move |error: cpal::StreamError| eprintln!("Stream threw an error: {}", error),
@@ -106,8 +106,9 @@ fn main() {
                     }
                     OwnedMessage::Binary(bin) => {
                         let decoded = decoder.decode_float(&bin, false).unwrap();
-                        for sample in decoded {
-                            while producer.push(sample).is_err() {}
+                        let mut decoded = decoded.as_slice();
+                        while let Some(written) = producer.write_blocking(decoded) {
+                            decoded = &decoded[written..];
                         }
                         // break; // debug!
                     }
