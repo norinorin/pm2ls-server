@@ -12,13 +12,10 @@ use std::net::TcpStream;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Instant;
 use websocket::sync::Client;
 use websocket::sync::Server;
 use websocket::ws::dataframe::DataFrame;
 use websocket::OwnedMessage;
-
-const LATENCY_THRESHOLD: u128 = 10;
 
 struct DeviceWrapper {
     output_device: Device,
@@ -64,9 +61,6 @@ fn main() {
             let buffer_size: u32 = get_int(&mut client);
             let ring_buffer_size = buffer_size as usize * channels as usize;
             let latency = buffer_size / (sample_rate / 1000);
-            let mut mean_latency = latency as u128;
-            let mut last_warning = mean_latency;
-            let mut peak_latency = mean_latency;
 
             println!("Trying to make a stream with:");
             println!("sample rate: {}", sample_rate);
@@ -112,31 +106,8 @@ fn main() {
                     }
                     OwnedMessage::Binary(bin) => {
                         let decoded = decoder.decode_float(&bin, false).unwrap();
-                        let start = Instant::now();
                         for sample in decoded {
                             while producer.push(sample).is_err() {}
-                        }
-                        let old_latency = mean_latency;
-                        mean_latency =
-                            (mean_latency + latency as u128 + start.elapsed().as_millis()) / 2;
-
-                        if mean_latency >= peak_latency {
-                            peak_latency = mean_latency
-                        }
-
-                        if old_latency
-                            .checked_sub(mean_latency)
-                            .unwrap_or_else(|| mean_latency - old_latency)
-                            >= LATENCY_THRESHOLD
-                            && last_warning != mean_latency
-                        {
-                            last_warning = mean_latency;
-                            print!(
-                                "Latency is changing (avg: {} msec, peak: {} msec). ",
-                                mean_latency, peak_latency
-                            );
-                            print!("Consider using adb to reverse the port ");
-                            println!("for minimum latency.");
                         }
                         // break; // debug!
                     }
