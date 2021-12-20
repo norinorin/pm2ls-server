@@ -12,10 +12,13 @@ use std::net::TcpStream;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Instant;
 use websocket::sync::Client;
 use websocket::sync::Server;
 use websocket::ws::dataframe::DataFrame;
 use websocket::OwnedMessage;
+
+const LATENCY_THRESHOLD: u128 = 10;
 
 struct DeviceWrapper {
     output_device: Device,
@@ -33,6 +36,7 @@ where
 
 fn main() {
     let server = Server::bind("0.0.0.0:7619").unwrap();
+    println!("Listening on port {}", 7619);
     let data = Arc::new(Mutex::new(DeviceWrapper {
         output_device: cpal::default_host().default_output_device().unwrap(),
     }));
@@ -59,14 +63,15 @@ fn main() {
             let channels: u16 = get_int(&mut client);
             let buffer_size: u32 = get_int(&mut client);
             let ring_buffer_size = buffer_size as usize * channels as usize;
+            let latency = buffer_size / (sample_rate / 1000);
+            let mut mean_latency = latency as u128;
+            let mut last_warning = mean_latency;
+            let mut peak_latency = mean_latency;
 
+            println!("Trying to make a stream with:");
             println!("sample rate: {}", sample_rate);
             println!("channels: {}", channels);
-            println!(
-                "buffer size ({} msec latency): {}",
-                buffer_size / (sample_rate / 1000),
-                buffer_size
-            );
+            println!("buffer size ({} msec latency): {}", latency, buffer_size);
 
             let config = cpal::StreamConfig {
                 channels,
@@ -78,7 +83,7 @@ fn main() {
             let ring = RingBuffer::<f32>::new(ring_buffer_size * 2);
             let (mut producer, mut consumer) = ring.split();
 
-            data_ref
+            let output_stream = data_ref
                 .output_device
                 .build_output_stream(
                     &config,
@@ -88,9 +93,9 @@ fn main() {
                     },
                     move |error: cpal::StreamError| eprintln!("Stream threw an error: {}", error),
                 )
-                .unwrap()
-                .play()
                 .unwrap();
+
+            output_stream.play().unwrap();
 
             for message in client.incoming_messages() {
                 if message.is_err() {
@@ -107,7 +112,32 @@ fn main() {
                     }
                     OwnedMessage::Binary(bin) => {
                         let decoded = decoder.decode_float(&bin, false).unwrap();
-                        producer.push_slice(&decoded);
+                        let start = Instant::now();
+                        for sample in decoded {
+                            while producer.push(sample).is_err() {}
+                        }
+                        let old_latency = mean_latency;
+                        mean_latency =
+                            (mean_latency + latency as u128 + start.elapsed().as_millis()) / 2;
+
+                        if mean_latency >= peak_latency {
+                            peak_latency = mean_latency
+                        }
+
+                        if old_latency
+                            .checked_sub(mean_latency)
+                            .unwrap_or_else(|| mean_latency - old_latency)
+                            >= LATENCY_THRESHOLD
+                            && last_warning != mean_latency
+                        {
+                            last_warning = mean_latency;
+                            print!(
+                                "Latency is changing (avg: {} msec, peak: {} msec). ",
+                                mean_latency, peak_latency
+                            );
+                            print!("Consider using adb to reverse the port ");
+                            println!("for minimum latency.");
+                        }
                         // break; // debug!
                     }
                     _ => (),
