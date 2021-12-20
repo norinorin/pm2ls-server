@@ -31,10 +31,6 @@ where
         .unwrap()
 }
 
-fn err_fn(err: cpal::StreamError) {
-    eprintln!("an error occurred on stream: {}", err);
-}
-
 fn main() {
     let server = Server::bind("0.0.0.0:7619").unwrap();
     let data = Arc::new(Mutex::new(DeviceWrapper {
@@ -77,25 +73,24 @@ fn main() {
                 sample_rate: cpal::SampleRate(sample_rate),
                 buffer_size: cpal::BufferSize::Fixed(buffer_size),
             };
+            // TODO: reuse decoder
             let decoder = OpusDecoder::new(sample_rate as i32, channels as i32).unwrap();
-            let ring = RingBuffer::<i16>::new(ring_buffer_size * 2);
+            let ring = RingBuffer::<f32>::new(ring_buffer_size * 2);
             let (mut producer, mut consumer) = ring.split();
 
-            for _ in 0..ring_buffer_size {
-                producer.push(0).unwrap();
-            }
-
-            let output_data_fn = move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                let written = consumer.pop_slice(data);
-                data[written..].iter_mut().for_each(|s| *s = 0);
-            };
-
-            let output_stream = data_ref
+            data_ref
                 .output_device
-                .build_output_stream(&config, output_data_fn, err_fn)
+                .build_output_stream(
+                    &config,
+                    move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                        let read = consumer.pop_slice(data);
+                        data[read..].iter_mut().for_each(|s| *s = 0.0);
+                    },
+                    move |error: cpal::StreamError| eprintln!("Stream threw an error: {}", error),
+                )
+                .unwrap()
+                .play()
                 .unwrap();
-
-            output_stream.play().unwrap();
 
             for message in client.incoming_messages() {
                 if message.is_err() {
@@ -111,10 +106,8 @@ fn main() {
                         break;
                     }
                     OwnedMessage::Binary(bin) => {
-                        let decoded = decoder.decode(&bin, false).unwrap();
-                        for sample in decoded {
-                            producer.push(sample).unwrap_or(());
-                        }
+                        let decoded = decoder.decode_float(&bin, false).unwrap();
+                        producer.push_slice(&decoded);
                         // break; // debug!
                     }
                     _ => (),
