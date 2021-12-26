@@ -1,5 +1,8 @@
 extern crate cpal;
+extern crate pretty_env_logger;
 extern crate websocket;
+#[macro_use]
+extern crate log;
 
 mod decoder;
 
@@ -17,6 +20,8 @@ use websocket::sync::Server;
 use websocket::ws::dataframe::DataFrame;
 use websocket::OwnedMessage;
 
+const LOG_LEVEL_VAR: &'static str = "LOG_LEVEL";
+
 struct DeviceWrapper {
     output_device: Device,
 }
@@ -32,8 +37,15 @@ where
 }
 
 fn main() {
+    if std::env::var(LOG_LEVEL_VAR).is_err() {
+        std::env::set_var(LOG_LEVEL_VAR, "INFO");
+    }
+
+    pretty_env_logger::init_custom_env(LOG_LEVEL_VAR);
+
     let server = Server::bind("0.0.0.0:7619").unwrap();
-    println!("Listening on port {}", 7619);
+    info!("Listening on port {}", 7619);
+
     let data = Arc::new(Mutex::new(DeviceWrapper {
         output_device: cpal::default_host().default_output_device().unwrap(),
     }));
@@ -41,12 +53,12 @@ fn main() {
     for request in server.filter_map(Result::ok) {
         let data = Arc::clone(&data);
         thread::spawn(move || {
-            println!("Got a connection! Trying to accept...");
+            info!("Got a connection! Trying to accept...");
 
             let data_ref = match data.try_lock() {
                 Ok(data_ref) => data_ref,
                 _ => {
-                    println!("Currently in use. Rejecting incoming request.",);
+                    error!("Currently in use. Rejecting incoming request.",);
                     request.reject().unwrap();
                     return;
                 }
@@ -54,7 +66,7 @@ fn main() {
 
             let mut client = request.accept().unwrap();
 
-            println!("Connection has been established.");
+            info!("Connection has been established.");
 
             let sample_rate: u32 = get_int(&mut client);
             let channels: u16 = get_int(&mut client);
@@ -62,10 +74,10 @@ fn main() {
             let ring_buffer_size = buffer_size as usize * channels as usize;
             let latency = buffer_size / (sample_rate / 1000);
 
-            println!("Trying to make a stream with:");
-            println!("sample rate: {}", sample_rate);
-            println!("channels: {}", channels);
-            println!("buffer size ({} msec latency): {}", latency, buffer_size);
+            info!("Trying to make a stream with:");
+            info!("sample rate: {}", sample_rate);
+            info!("channels: {}", channels);
+            info!("buffer size ({} msec latency): {}", latency, buffer_size);
 
             let config = cpal::StreamConfig {
                 channels,
@@ -85,7 +97,7 @@ fn main() {
                         let read = consumer.read(data).unwrap_or(0);
                         data[read..].iter_mut().for_each(|s| *s = 0.0);
                     },
-                    move |error: cpal::StreamError| eprintln!("Stream threw an error: {}", error),
+                    move |error: cpal::StreamError| error!("Stream threw an error: {}", error),
                 )
                 .unwrap();
 
@@ -115,7 +127,7 @@ fn main() {
                     _ => (),
                 }
             }
-            println!("Connection has been terminated.\n");
+            info!("Connection has been terminated.\n");
         });
     }
 }
