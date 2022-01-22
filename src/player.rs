@@ -51,14 +51,19 @@ impl Player {
 
         loop {
             if let Some((size, _)) = to_send {
-                // TODO: have the audio info embedded in the header.
+                // TODO: have the audio info embedded in the header
+                // and have a protocol to let the client know that we're connected.
                 let tmp = &buf[..size];
-                trace!("Received: {:?}", tmp);
-                let decoded = decoder.decode_float(tmp, false).unwrap();
-                trace!("Decoded: {:?}", decoded);
-                let mut decoded = decoded.as_slice();
-                while let Some(written) = producer.write_blocking(decoded) {
-                    decoded = &decoded[written..];
+                match decoder.decode_float(tmp, false) {
+                    Ok(decoded) => {
+                        trace!("Decoded: {:?}", decoded);
+                        // I guess we'd better drop it if it fails
+                        // 'cuz otherwise the latency'd go brrr
+                        // Blocking once until there's a free slot and drop the rest
+                        // might be an option too, perhaps.
+                        producer.write(decoded.as_slice()).unwrap_or(0);
+                    }
+                    Err(error) => error!("Failed to decode due to: {}", error),
                 }
             }
 
