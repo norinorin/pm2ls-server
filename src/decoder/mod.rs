@@ -1,7 +1,9 @@
 extern crate audiopus_sys;
 
-use audiopus_sys::{opus_decode, opus_decode_float, opus_decoder_create, OPUS_OK};
-use audiopus_sys::{opus_decoder_destroy, OpusDecoder as OpusDecoderState};
+use audiopus_sys::{
+    opus_decode, opus_decode_float, opus_decoder_create, OPUS_OK, OPUS_SET_GAIN_REQUEST,
+};
+use audiopus_sys::{opus_decoder_ctl, opus_decoder_destroy, OpusDecoder as OpusDecoderState};
 
 mod errors;
 
@@ -72,6 +74,17 @@ impl OpusDecoder {
         }
 
         Ok(decoded)
+    }
+
+    pub fn set_volume(&self, scale: i16) -> Result<(), OpusError> {
+        let db = (20. * (scale as f64 / 100.).log10()) as i32;
+        let db_q8 = std::cmp::max(i16::MIN as i32, std::cmp::min(i16::MAX as i32, db * 256));
+        debug!("Setting gain to {}", db_q8);
+        unsafe {
+            opus_decoder_ctl(self.state, OPUS_SET_GAIN_REQUEST, db_q8);
+        }
+
+        Ok(())
     }
 }
 

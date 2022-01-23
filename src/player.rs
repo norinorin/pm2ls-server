@@ -3,29 +3,31 @@ extern crate cpal;
 use crate::decoder::OpusDecoder;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rb::{RbConsumer, RbProducer, SpscRb, RB};
-use std::io;
 use tokio::net::UdpSocket;
 
 pub struct Player {
     socket: UdpSocket,
     buf: Vec<u8>,
     write_all: bool,
+    volume: i16,
 }
 
 impl Player {
-    pub fn from_socket(socket: UdpSocket, write_all: Option<bool>) -> Self {
+    pub fn from_socket(socket: UdpSocket, write_all: bool, volume: i16) -> Self {
         Self {
             socket,
             buf: vec![0; 1024],
-            write_all: write_all.unwrap_or(false),
+            write_all,
+            volume,
         }
     }
 
-    pub async fn run(self) -> Result<(), io::Error> {
+    pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
         let Self {
             socket,
             mut buf,
             write_all,
+            volume,
         } = self;
 
         let device = cpal::default_host()
@@ -50,9 +52,11 @@ impl Player {
         let output_stream = device
             .build_output_stream(&config, data_callback, Self::error_callback)
             .expect("Failed to create audio stream.");
-        output_stream.play().unwrap();
+        output_stream.play()?;
 
-        let decoder = OpusDecoder::new(48000, 1).unwrap();
+        let decoder = OpusDecoder::new(48000, 1)?;
+        decoder.set_volume(volume)?;
+
         let mut to_send: Option<(usize, _)> = None;
 
         let write_data = if write_all {

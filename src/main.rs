@@ -18,6 +18,10 @@ struct Args {
     /// Whether or not retry to write if fails
     #[clap(short, long)]
     write_all: bool,
+
+    /// Volume scaling in percent
+    #[clap(short, long, default_value_t = 100)]
+    volume: i16,
 }
 
 #[tokio::main]
@@ -34,7 +38,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Listening on: {}", socket.local_addr()?);
 
-    let player = Player::from_socket(socket, Some(args.write_all));
+    let player = Player::from_socket(socket, args.write_all, args.volume);
 
     player.run().await?;
 
