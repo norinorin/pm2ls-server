@@ -5,14 +5,25 @@ extern crate log;
 pub mod decoder;
 mod player;
 
+use clap::Parser;
 use player::Player;
 use std::error::Error;
 use tokio::net::UdpSocket;
 
 const LOG_LEVEL_VAR: &str = "LOG_LEVEL";
 
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    /// Whether or not retry to write if fails
+    #[clap(short, long)]
+    write_all: bool,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let args = Args::parse();
+
     if std::env::var(LOG_LEVEL_VAR).is_err() {
         std::env::set_var(LOG_LEVEL_VAR, "INFO");
     }
@@ -23,7 +34,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Listening on: {}", socket.local_addr()?);
 
-    let player = Player::from_socket(socket);
+    let player = Player::from_socket(socket, Some(args.write_all));
 
     player.run().await?;
 

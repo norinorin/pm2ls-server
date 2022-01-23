@@ -9,18 +9,24 @@ use tokio::net::UdpSocket;
 pub struct Player {
     socket: UdpSocket,
     buf: Vec<u8>,
+    write_all: bool,
 }
 
 impl Player {
-    pub fn from_socket(socket: UdpSocket) -> Self {
+    pub fn from_socket(socket: UdpSocket, write_all: Option<bool>) -> Self {
         Self {
             socket,
             buf: vec![0; 1024],
+            write_all: write_all.unwrap_or(false),
         }
     }
 
     pub async fn run(self) -> Result<(), io::Error> {
-        let Self { socket, mut buf } = self;
+        let Self {
+            socket,
+            mut buf,
+            write_all,
+        } = self;
 
         let device = cpal::default_host()
             .default_output_device()
@@ -49,6 +55,16 @@ impl Player {
         let decoder = OpusDecoder::new(48000, 1).unwrap();
         let mut to_send: Option<(usize, _)> = None;
 
+        let write_data = if write_all {
+            info!("Running in blocking mode, will attempt to retry if writing fails.");
+            warn!("The latency may be relatively high.");
+            Self::write_all::<f32>
+        } else {
+            info!("Running in Low latency mode, will not attempt to retry if writing fails.");
+            warn!("You might run into some crackles.");
+            Self::try_write::<f32>
+        };
+
         loop {
             if let Some((size, _)) = to_send {
                 // TODO: have the audio info embedded in the header
@@ -56,12 +72,9 @@ impl Player {
                 let tmp = &buf[..size];
                 match decoder.decode_float(tmp, false) {
                     Ok(decoded) => {
+                        trace!("Received: {:?}", tmp);
                         trace!("Decoded: {:?}", decoded);
-                        // I guess we'd better drop it if it fails
-                        // 'cuz otherwise the latency'd go brrr
-                        // Blocking once until there's a free slot and drop the rest
-                        // might be an option too, perhaps.
-                        producer.write(decoded.as_slice()).unwrap_or(0);
+                        write_data(&producer, decoded)
                     }
                     Err(error) => error!("Failed to decode due to: {}", error),
                 }
@@ -73,5 +86,17 @@ impl Player {
 
     fn error_callback(error: cpal::StreamError) {
         error!("Stream error: {}", error);
+    }
+
+    fn write_all<T>(producer: &dyn RbProducer<T>, data: Vec<T>) {
+        let mut data = data.as_slice();
+
+        while let Some(written) = producer.write_blocking(data) {
+            data = &data[written..];
+        }
+    }
+
+    fn try_write<T>(producer: &dyn RbProducer<T>, data: Vec<T>) {
+        producer.write(&data).unwrap_or(0);
     }
 }
